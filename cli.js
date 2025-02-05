@@ -77,22 +77,37 @@ class WordleCLI {
     }
 
     // Get suggestions
-    const suggestions = this.solver.suggestGuesses(
+    const { solutionGuesses, informationGuesses } = this.solver.suggestGuesses(
       this.currentPossibleWords,
       Array.from(this.usedLetters)
     );
 
-    if (suggestions.length === 0) {
+    if (solutionGuesses.length === 0) {
       console.log("\nNo possible words remain");
     } else {
-      console.log("\nTop suggested guesses:");
-      suggestions.forEach((suggestion, index) => {
+      // Show solution guesses
+      console.log("\nTop solution guesses (words that could be the answer):");
+      solutionGuesses.forEach((suggestion, index) => {
         console.log(
           `${index + 1}. ${suggestion.word} (score: ${suggestion.score.toFixed(
             1
           )})`
         );
       });
+
+      // Show information guesses if we have more than a few possible words
+      if (informationGuesses.length > 0) {
+        console.log(
+          "\nInformation gathering guesses (to eliminate more possibilities):"
+        );
+        informationGuesses.forEach((suggestion, index) => {
+          console.log(
+            `${index + 1}. ${
+              suggestion.word
+            } (score: ${suggestion.score.toFixed(1)})`
+          );
+        });
+      }
     }
 
     if (this.currentPossibleWords.length === 0) {
