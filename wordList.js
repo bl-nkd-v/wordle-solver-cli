@@ -9,14 +9,32 @@ const wordListPath = path.join(
 );
 const allWords = fs.readFileSync(wordListPath, "utf8").split("\n");
 
-const wordList = allWords
-  .filter((word) => {
-    return word.length === 5 && /^[a-zA-Z]+$/.test(word);
-  })
-  .map((word) => word.toLowerCase());
+// Create a map of word lengths to word lists
+const wordLists = new Map();
 
-wordList.sort();
+// Filter words by length and store them in the map
+allWords.forEach((word) => {
+  if (/^[a-zA-Z]+$/.test(word)) {
+    // Only include words with letters
+    const length = word.length;
+    const lowerWord = word.toLowerCase();
 
-console.log(`Loaded ${wordList.length} five-letter words`);
+    if (!wordLists.has(length)) {
+      wordLists.set(length, new Set());
+    }
+    wordLists.get(length).add(lowerWord);
+  }
+});
 
-module.exports = wordList;
+// Convert Sets to sorted arrays
+for (const [length, wordSet] of wordLists) {
+  wordLists.set(length, Array.from(wordSet).sort());
+}
+
+// Log available word lengths and counts
+console.log("\nAvailable word lengths and counts:");
+for (const [length, words] of wordLists) {
+  console.log(`${length}-letter words: ${words.length}`);
+}
+
+module.exports = wordLists;

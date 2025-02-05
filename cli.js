@@ -8,16 +8,46 @@ const rl = readline.createInterface({
 
 class WordleCLI {
   constructor() {
-    this.solver = new WordleSolver();
+    this.solver = null;
+    this.wordLength = null;
     this.greenLetters = {};
     this.yellowLetters = {};
     this.greyLetters = [];
     this.usedLetters = new Set();
+    this.currentPossibleWords = [];
   }
 
   async start() {
     console.log("\nWelcome to Wordle Solver!");
     console.log("------------------------");
+
+    // Get available word lengths
+    const availableLengths = WordleSolver.getAvailableWordLengths();
+    console.log("\nAvailable word lengths:", availableLengths.join(", "));
+
+    // Ask for word length
+    while (!this.solver) {
+      const lengthInput = await this.question(
+        "Enter the length of words to solve (e.g., 4 or 5): "
+      );
+      const length = parseInt(lengthInput);
+
+      if (isNaN(length) || !availableLengths.includes(length)) {
+        console.log(
+          `Invalid length. Please choose from: ${availableLengths.join(", ")}`
+        );
+        continue;
+      }
+
+      try {
+        this.solver = new WordleSolver(length);
+        this.wordLength = length;
+        console.log(`\nInitialized solver for ${length}-letter words`);
+      } catch (error) {
+        console.log(`Error: ${error.message}`);
+      }
+    }
+
     await this.getNextGuess();
   }
 
@@ -32,25 +62,40 @@ class WordleCLI {
     );
 
     // Get possible words based on current state
-    const possibleWords = this.solver.findPossibleWords(
+    this.currentPossibleWords = this.solver.findPossibleWords(
       this.greenLetters,
       this.yellowLetters,
       this.greyLetters
     );
 
-    console.log("\nPossible words remaining:", possibleWords.length);
-    if (possibleWords.length <= 10) {
-      console.log("All possible words:", possibleWords.join(", "));
+    console.log(
+      "\nPossible words remaining:",
+      this.currentPossibleWords.length
+    );
+    if (this.currentPossibleWords.length <= 10) {
+      console.log("All possible words:", this.currentPossibleWords.join(", "));
     }
 
-    // Get suggestion
-    const suggestion = this.solver.suggestGuess(
-      possibleWords,
+    // Get suggestions
+    const suggestions = this.solver.suggestGuesses(
+      this.currentPossibleWords,
       Array.from(this.usedLetters)
     );
-    console.log("\nSuggested guess:", suggestion || "No possible words remain");
 
-    if (possibleWords.length === 0) {
+    if (suggestions.length === 0) {
+      console.log("\nNo possible words remain");
+    } else {
+      console.log("\nTop suggested guesses:");
+      suggestions.forEach((suggestion, index) => {
+        console.log(
+          `${index + 1}. ${suggestion.word} (score: ${suggestion.score.toFixed(
+            1
+          )})`
+        );
+      });
+    }
+
+    if (this.currentPossibleWords.length === 0) {
       console.log(
         "\nNo words match the current criteria. Please check your inputs."
       );
@@ -58,37 +103,54 @@ class WordleCLI {
       return;
     }
 
-    if (possibleWords.length === 1) {
-      console.log("\nCongratulations! The word must be:", possibleWords[0]);
+    if (this.currentPossibleWords.length === 1) {
+      console.log(
+        "\nCongratulations! The word must be:",
+        this.currentPossibleWords[0]
+      );
       await this.askToContinue();
       return;
     }
 
     // Ask for the actual guess used
-    const actualGuess = await this.question(
-      "\nEnter the word you guessed (or 'q' to quit): "
+    const input = await this.question(
+      '\nEnter your guess (or "q" to quit, "l" to list all remaining words): '
     );
 
-    if (actualGuess.toLowerCase() === "q") {
+    const command = input.toLowerCase();
+    if (command === "q") {
       rl.close();
       return;
     }
 
-    if (actualGuess.length !== 5) {
-      console.log("\nError: Please enter a 5-letter word");
+    if (command === "l") {
+      console.log("\nAll remaining possible words:");
+      // Print words in columns for better readability
+      const columns = 5;
+      for (let i = 0; i < this.currentPossibleWords.length; i += columns) {
+        const row = this.currentPossibleWords
+          .slice(i, i + columns)
+          .map((word) => word.padEnd(12)) // Pad each word to align columns
+          .join("");
+        console.log(row);
+      }
       await this.getNextGuess();
       return;
     }
 
-    actualGuess
-      .toLowerCase()
-      .split("")
-      .forEach((letter) => this.usedLetters.add(letter));
+    if (input.length !== this.wordLength) {
+      console.log(`\nError: Please enter a ${this.wordLength}-letter word`);
+      await this.getNextGuess();
+      return;
+    }
+
+    const actualGuess = input.toLowerCase();
+    actualGuess.split("").forEach((letter) => this.usedLetters.add(letter));
 
     console.log(
       `\nEnter feedback for your guess "${actualGuess.toUpperCase()}":`
     );
-    await this.getFeedback(actualGuess.toLowerCase());
+    await this.getFeedback(actualGuess);
   }
 
   formatGreenLetters() {
@@ -111,13 +173,15 @@ class WordleCLI {
   }
 
   async getFeedback(guessedWord) {
-    console.log("\nEnter feedback using the following format:");
-    console.log("For each letter, enter: position,color");
-    console.log("Colors: g (green), y (yellow), x (grey)");
-    console.log('Example: "1,g 3,y 5,x" means:');
-    console.log("- Position 1 is green");
-    console.log("- Position 3 is yellow");
-    console.log("- Position 5 is grey");
+    console.log(
+      `\nEnter feedback as a ${this.wordLength}-letter string where:`
+    );
+    console.log("g = green (correct letter, correct position)");
+    console.log("y = yellow (correct letter, wrong position)");
+    console.log("x = grey (letter not in word)");
+    console.log(`Example: "${"x".repeat(this.wordLength - 1)}g" means:`);
+    console.log(`- First ${this.wordLength - 1} letters are grey`);
+    console.log("- Last letter is green");
 
     const feedback = await this.question('Enter feedback (or "q" to quit): ');
 
@@ -127,7 +191,7 @@ class WordleCLI {
     }
 
     try {
-      this.processFeedback(feedback, guessedWord);
+      this.processFeedback(feedback.toLowerCase(), guessedWord);
       await this.getNextGuess();
     } catch (error) {
       console.log("\nError:", error.message);
@@ -136,20 +200,18 @@ class WordleCLI {
   }
 
   processFeedback(feedback, guessedWord) {
-    const feedbackParts = feedback.trim().split(" ");
+    if (feedback.length !== this.wordLength) {
+      throw new Error(
+        `Feedback must be exactly ${this.wordLength} letters long`
+      );
+    }
 
-    for (const part of feedbackParts) {
-      const [posStr, color] = part.split(",");
-      const pos = parseInt(posStr) - 1;
+    if (!/^[gyx]+$/.test(feedback)) {
+      throw new Error("Feedback can only contain the letters g, y, and x");
+    }
 
-      if (isNaN(pos) || pos < 0 || pos > 4) {
-        throw new Error("Position must be between 1 and 5");
-      }
-
-      if (!["g", "y", "x"].includes(color)) {
-        throw new Error("Color must be g, y, or x");
-      }
-
+    const colors = feedback.split("");
+    colors.forEach((color, pos) => {
       const letter = guessedWord[pos];
 
       switch (color) {
@@ -166,7 +228,7 @@ class WordleCLI {
           this.greyLetters.push(letter);
           break;
       }
-    }
+    });
   }
 
   async askToContinue() {
@@ -178,7 +240,10 @@ class WordleCLI {
       this.yellowLetters = {};
       this.greyLetters = [];
       this.usedLetters.clear();
-      await this.getNextGuess();
+      this.currentPossibleWords = [];
+      // Ask for word length again for the new game
+      this.solver = null;
+      await this.start();
     } else {
       rl.close();
     }

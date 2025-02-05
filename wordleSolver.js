@@ -1,18 +1,22 @@
-const wordList = require("./wordList");
+const wordLists = require("./wordList");
 
 class WordleSolver {
-  constructor() {
+  constructor(wordLength) {
     this.weight = {
       uniqueLetters: 10,
       letterFrequency: 1,
     };
-    this.wordList = wordList;
+    this.wordLength = wordLength;
+    this.wordList = wordLists.get(wordLength) || [];
+    if (this.wordList.length === 0) {
+      throw new Error(`No ${wordLength}-letter words found in dictionary`);
+    }
   }
 
   /**
    * Find possible words based on the feedback from previous guesses
-   * @param {Object} greenLetters - Object with index positions (0-4) as keys and letters as values
-   * @param {Object} yellowLetters - Object with index positions (0-4) as keys and arrays of letters as values
+   * @param {Object} greenLetters - Object with index positions (0-based) as keys and letters as values
+   * @param {Object} yellowLetters - Object with index positions (0-based) as keys and arrays of letters as values
    * @param {Array} greyLetters - Array of letters that are not in the word
    * @returns {Array} - List of possible words
    */
@@ -47,14 +51,15 @@ class WordleSolver {
   }
 
   /**
-   * Suggest the next best guess based on letter frequency and unused letters
+   * Suggest the best guesses based on letter frequency and unused letters
    * @param {Array} possibleWords - List of possible words
    * @param {Array} usedLetters - Letters that have been guessed already
-   * @returns {String} - Suggested word to guess
+   * @param {number} numSuggestions - Number of suggestions to return
+   * @returns {Array} - Array of suggested words with their scores
    */
-  suggestGuess(possibleWords, usedLetters = []) {
+  suggestGuesses(possibleWords, usedLetters = [], numSuggestions = 5) {
     if (possibleWords.length === 0) {
-      return null;
+      return [];
     }
 
     const letterFrequency = {};
@@ -81,7 +86,15 @@ class WordleSolver {
     });
 
     wordScores.sort((a, b) => b.score - a.score);
-    return wordScores[0].word;
+    return wordScores.slice(0, numSuggestions);
+  }
+
+  /**
+   * Get available word lengths in the dictionary
+   * @returns {Array} - Array of available word lengths
+   */
+  static getAvailableWordLengths() {
+    return Array.from(wordLists.keys()).sort((a, b) => a - b);
   }
 }
 
