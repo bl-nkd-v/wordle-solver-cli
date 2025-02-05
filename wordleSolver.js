@@ -110,16 +110,17 @@ class WordleSolver {
     // Calculate letter frequency in possible solutions
     const solutionLetterFreq = this.calculateLetterFrequency(possibleWords);
 
-    // Score solution guesses (current approach)
+    // Score solution guesses
     const solutionScores = this.scoreWords(
       possibleWords,
       usedLetters,
       solutionLetterFreq
     );
 
-    // If we have many possible solutions, also suggest information guesses
+    // Generate information guesses if we have enough possible words to make it worthwhile
     let informationScores = [];
-    if (possibleWords.length > 2) {
+    if (possibleWords.length >= 2) {
+      // Changed from > 2 to >= 2
       // Create weights for unknown positions (0 for green positions)
       const positionWeights = Array(this.wordLength).fill(1);
       Object.keys(this.getGreenPositions(possibleWords)).forEach((pos) => {
@@ -132,13 +133,17 @@ class WordleSolver {
         positionWeights
       );
 
+      // For the first guess (when no letters are used), focus purely on partition score
+      const isFirstGuess = usedLetters.length === 0;
+
       // Score all words as information guesses
       informationScores = this.scoreInformationWords(
         this.allWordList,
         usedLetters,
         infoLetterFreq,
         possibleWords,
-        positionWeights
+        positionWeights,
+        isFirstGuess
       );
     }
 
@@ -180,7 +185,8 @@ class WordleSolver {
     usedLetters,
     letterFrequency,
     possibleWords,
-    positionWeights
+    positionWeights,
+    isFirstGuess = false
   ) {
     // Get all known letters (both green and yellow)
     const knownLetters = new Set([
@@ -192,13 +198,21 @@ class WordleSolver {
       const uniqueLetters = new Set(word.split(""));
       let score = 0;
 
+      // For first guess, focus purely on partition score
+      if (isFirstGuess) {
+        score =
+          this.calculatePartitionScore(word, possibleWords) *
+          this.weight.informationGain;
+        return { word, score, type: "information" };
+      }
+
       // Count letters that we haven't used yet and aren't known
       const discoveryLetters = [...uniqueLetters].filter(
         (letter) => !usedLetters.includes(letter) && !knownLetters.has(letter)
       );
 
-      // Skip words that don't introduce any new letters
-      if (discoveryLetters.length === 0) {
+      // Skip words that don't introduce any new letters (unless it's first guess)
+      if (discoveryLetters.length === 0 && !isFirstGuess) {
         return { word, score: 0, type: "information" };
       }
 
