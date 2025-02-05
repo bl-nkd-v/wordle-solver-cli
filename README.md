@@ -1,6 +1,6 @@
 # Wordle Solver
 
-A smart command-line tool that helps you solve Wordle and Wordle-like word games. This solver uses letter frequency analysis and information theory to suggest optimal guesses, helping you solve the puzzle in fewer attempts.
+A smart command-line tool that helps you solve Wordle and Wordle-like word games. This solver uses letter frequency analysis and information theory to suggest optimal guesses, helping you solve the puzzle in fewer attempts. Built with Cursor.
 
 ## Features
 
