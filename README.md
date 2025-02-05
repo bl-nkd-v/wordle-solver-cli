@@ -21,7 +21,7 @@ A smart command-line tool that helps you solve Wordle and Wordle-like word games
 1. Clone this repository:
 
 ```bash
-git clone https://github.com/yourusername/wordle-solver.git
+git clone https://github.com/bl-nkd-v/wordle-solver.git
 cd wordle-solver
 ```
 
