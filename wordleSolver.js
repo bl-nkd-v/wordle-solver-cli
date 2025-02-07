@@ -14,6 +14,54 @@ class WordleSolver {
     if (this.wordList.length === 0) {
       throw new Error(`No ${wordLength}-letter words found in dictionary`);
     }
+
+    // Precompute first guess scores
+    this.firstGuessScores = null;
+  }
+
+  /**
+   * Get initial guesses without heavy computation
+   * @returns {Object} Initial guess suggestions
+   */
+  getInitialGuesses() {
+    // These are pre-selected good starting words for 5-letter Wordle
+    if (this.wordLength === 5) {
+      return {
+        solutionGuesses: [
+          { word: "stare", score: 100, type: "solution" },
+          { word: "crane", score: 98, type: "solution" },
+          { word: "trace", score: 98, type: "solution" },
+          { word: "slate", score: 97, type: "solution" },
+          { word: "crate", score: 97, type: "solution" },
+        ],
+        informationGuesses: [
+          { word: "stare", score: 100, type: "information" },
+          { word: "crane", score: 98, type: "information" },
+          { word: "trace", score: 98, type: "information" },
+          { word: "slate", score: 97, type: "information" },
+          { word: "crate", score: 97, type: "information" },
+        ],
+      };
+    }
+
+    // For other lengths, do a quick frequency-based calculation
+    const letterFreq = this.calculateLetterFrequency(this.wordList);
+    const quickScores = this.wordList
+      .map((word) => {
+        const uniqueLetters = new Set(word.split(""));
+        let score = uniqueLetters.size * this.weight.uniqueLetters;
+        for (const letter of uniqueLetters) {
+          score += letterFreq[letter].total * this.weight.letterFrequency;
+        }
+        return { word, score, type: "solution" };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+
+    return {
+      solutionGuesses: quickScores,
+      informationGuesses: quickScores,
+    };
   }
 
   /**
@@ -24,18 +72,39 @@ class WordleSolver {
    * @returns {Array} - List of possible words
    */
   findPossibleWords(greenLetters = {}, yellowLetters = {}, greyLetters = []) {
+    // Remove duplicates from grey letters
+    const uniqueGreyLetters = [...new Set(greyLetters)];
+
+    // Get all confirmed letters (green + yellow)
+    const confirmedLetters = new Set();
+    Object.values(greenLetters).forEach((letter) =>
+      confirmedLetters.add(letter)
+    );
+    Object.values(yellowLetters).forEach((letters) =>
+      letters.forEach((letter) => confirmedLetters.add(letter))
+    );
+
+    // Only consider a letter as truly grey if it's not confirmed in another position
+    const trueGreyLetters = uniqueGreyLetters.filter(
+      (letter) => !confirmedLetters.has(letter)
+    );
+
     return this.wordList.filter((word) => {
+      // Check green letters (must be in exact positions)
       for (const [index, letter] of Object.entries(greenLetters)) {
         if (word[parseInt(index)] !== letter) {
           return false;
         }
       }
 
+      // Check yellow letters
       for (const [index, letters] of Object.entries(yellowLetters)) {
         const idx = parseInt(index);
+        // Letter shouldn't be in this position
         if (letters.includes(word[idx])) {
           return false;
         }
+        // But must be somewhere in the word
         for (const letter of letters) {
           if (!word.includes(letter)) {
             return false;
@@ -43,9 +112,35 @@ class WordleSolver {
         }
       }
 
-      for (const letter of greyLetters) {
+      // Check grey letters (only if they're not confirmed elsewhere)
+      for (const letter of trueGreyLetters) {
         if (word.includes(letter)) {
           return false;
+        }
+      }
+
+      // For letters that appear as both yellow/green AND grey,
+      // check that the word doesn't have MORE occurrences than confirmed
+      const letterCounts = new Map();
+      // Count confirmed occurrences (green + yellow)
+      Object.values(greenLetters).forEach((letter) => {
+        letterCounts.set(letter, (letterCounts.get(letter) || 0) + 1);
+      });
+      Object.values(yellowLetters).forEach((letters) => {
+        letters.forEach((letter) => {
+          letterCounts.set(letter, (letterCounts.get(letter) || 0) + 1);
+        });
+      });
+
+      // Check if word has more occurrences than confirmed for any letter
+      // that also appears in grey list
+      for (const letter of uniqueGreyLetters) {
+        if (confirmedLetters.has(letter)) {
+          const confirmedCount = letterCounts.get(letter) || 0;
+          const wordCount = word.split("").filter((l) => l === letter).length;
+          if (wordCount > confirmedCount) {
+            return false;
+          }
         }
       }
 
@@ -103,6 +198,11 @@ class WordleSolver {
    * @returns {Object} - Object containing solution guesses and information guesses
    */
   suggestGuesses(possibleWords, usedLetters = [], numSuggestions = 5) {
+    // For the very first guess, return pre-computed suggestions
+    if (usedLetters.length === 0) {
+      return this.getInitialGuesses();
+    }
+
     if (possibleWords.length === 0) {
       return { solutionGuesses: [], informationGuesses: [] };
     }
@@ -117,10 +217,9 @@ class WordleSolver {
       solutionLetterFreq
     );
 
-    // Generate information guesses if we have enough possible words to make it worthwhile
+    // Generate information guesses if we have enough possible words
     let informationScores = [];
     if (possibleWords.length >= 2) {
-      // Changed from > 2 to >= 2
       // Create weights for unknown positions (0 for green positions)
       const positionWeights = Array(this.wordLength).fill(1);
       Object.keys(this.getGreenPositions(possibleWords)).forEach((pos) => {
@@ -133,17 +232,18 @@ class WordleSolver {
         positionWeights
       );
 
-      // For the first guess (when no letters are used), focus purely on partition score
-      const isFirstGuess = usedLetters.length === 0;
-
-      // Score all words as information guesses
+      // Score information guesses
+      const candidateWords = this.selectInformationGuessCandidates(
+        possibleWords,
+        usedLetters
+      );
       informationScores = this.scoreInformationWords(
-        this.allWordList,
+        candidateWords,
         usedLetters,
         infoLetterFreq,
         possibleWords,
         positionWeights,
-        isFirstGuess
+        false
       );
     }
 
@@ -364,6 +464,73 @@ class WordleSolver {
       }
     }
     return greenPositions;
+  }
+
+  /**
+   * Select a random sample of words
+   */
+  sampleWords(words, sampleSize) {
+    const sample = new Set();
+    const wordArray = Array.from(words);
+
+    while (sample.size < sampleSize && sample.size < wordArray.length) {
+      const index = Math.floor(Math.random() * wordArray.length);
+      sample.add(wordArray[index]);
+    }
+
+    return Array.from(sample);
+  }
+
+  /**
+   * Select candidate words for information gathering
+   */
+  selectInformationGuessCandidates(possibleWords, usedLetters) {
+    // If we have few possible words, evaluate all words
+    if (possibleWords.length < 100) {
+      return this.allWordList;
+    }
+
+    // Otherwise, use a combination of:
+    // 1. All possible solutions (they might be good information gatherers)
+    // 2. A sample of other words that have unused common letters
+    const candidates = new Set(possibleWords);
+
+    // Add words that have many unused letters
+    const commonLetters = this.getCommonLetters(possibleWords);
+    for (const word of this.allWordList) {
+      const wordLetters = new Set(word.split(""));
+      const unusedCommonLetters = [...wordLetters].filter(
+        (letter) => !usedLetters.includes(letter) && commonLetters.has(letter)
+      );
+      if (unusedCommonLetters.length >= 3) {
+        candidates.add(word);
+      }
+    }
+
+    return Array.from(candidates);
+  }
+
+  /**
+   * Get the most common letters in the possible words
+   */
+  getCommonLetters(words) {
+    const letterFreq = {};
+    for (const word of words) {
+      for (const letter of new Set(word.split(""))) {
+        letterFreq[letter] = (letterFreq[letter] || 0) + 1;
+      }
+    }
+
+    // Get letters that appear in at least 20% of words
+    const threshold = words.length * 0.2;
+    const commonLetters = new Set();
+    for (const [letter, freq] of Object.entries(letterFreq)) {
+      if (freq >= threshold) {
+        commonLetters.add(letter);
+      }
+    }
+
+    return commonLetters;
   }
 
   /**
