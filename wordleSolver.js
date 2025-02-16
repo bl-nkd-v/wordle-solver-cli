@@ -242,8 +242,7 @@ class WordleSolver {
         usedLetters,
         infoLetterFreq,
         possibleWords,
-        positionWeights,
-        false
+        positionWeights
       );
     }
 
@@ -285,8 +284,7 @@ class WordleSolver {
     usedLetters,
     letterFrequency,
     possibleWords,
-    positionWeights,
-    isFirstGuess = false
+    positionWeights
   ) {
     // Get all known letters (both green and yellow)
     const knownLetters = new Set([
@@ -294,63 +292,72 @@ class WordleSolver {
       ...this.getYellowLetters(possibleWords),
     ]);
 
+    // Calculate frequency of letters in remaining possible words
+    // But only for positions we don't know yet
+    const letterFreqByPosition = new Array(this.wordLength)
+      .fill(null)
+      .map(() => new Map());
+    const greenPositions = this.getGreenPositions(possibleWords);
+
+    // Count letter frequencies by position, excluding known positions
+    possibleWords.forEach((word) => {
+      word.split("").forEach((letter, pos) => {
+        if (!greenPositions[pos]) {
+          // Only count frequencies for unknown positions
+          if (!letterFreqByPosition[pos].has(letter)) {
+            letterFreqByPosition[pos].set(letter, 0);
+          }
+          letterFreqByPosition[pos].set(
+            letter,
+            letterFreqByPosition[pos].get(letter) + 1
+          );
+        }
+      });
+    });
+
     const wordScores = words.map((word) => {
-      const uniqueLetters = new Set(word.split(""));
       let score = 0;
+      const letters = word.split("");
 
-      // For first guess, focus purely on partition score
-      if (isFirstGuess) {
-        score =
-          this.calculatePartitionScore(word, possibleWords) *
-          this.weight.informationGain;
-        return { word, score, type: "information" };
-      }
+      // Score each position
+      letters.forEach((letter, pos) => {
+        // If this is a known position (green), we don't want to use it for information gathering
+        if (greenPositions[pos]) {
+          if (letter === greenPositions[pos]) {
+            score -= 50; // Heavy penalty for using known letters in known positions
+          }
+          return;
+        }
 
-      // Count letters that we haven't used yet and aren't known
-      const discoveryLetters = [...uniqueLetters].filter(
-        (letter) => !usedLetters.includes(letter) && !knownLetters.has(letter)
-      );
+        // Bonus for using frequent letters in this position
+        const positionFreq = letterFreqByPosition[pos];
+        if (positionFreq.has(letter)) {
+          score += (positionFreq.get(letter) / possibleWords.length) * 100;
+        }
 
-      // Skip words that don't introduce any new letters (unless it's first guess)
-      if (discoveryLetters.length === 0 && !isFirstGuess) {
-        return { word, score: 0, type: "information" };
-      }
+        // Penalty for using letters we've already tried
+        if (usedLetters.includes(letter)) {
+          score -= 30;
+        }
 
-      // Calculate how well this word could partition the remaining possibilities
+        // Small penalty for using known letters (but not as severe as before)
+        if (knownLetters.has(letter)) {
+          score -= 10;
+        }
+      });
+
+      // Bonus for unique letters (to maximize information gain)
+      const uniqueLetters = new Set(letters);
+      score += uniqueLetters.size * 20;
+
+      // Calculate partition score (how well this guess splits remaining possibilities)
       const partitionScore = this.calculatePartitionScore(word, possibleWords);
-      score += partitionScore * this.weight.informationGain;
-
-      // Add small bonus for common letters in the possible words
-      // but only for letters we haven't tried yet
-      for (const letter of discoveryLetters) {
-        if (letterFrequency[letter]) {
-          score +=
-            letterFrequency[letter].weightedTotal *
-            this.weight.letterFrequency *
-            0.5;
-        }
-      }
-
-      // Penalize words that use any known letters
-      const knownLettersUsed = [...uniqueLetters].filter((letter) =>
-        knownLetters.has(letter)
-      ).length;
-      if (knownLettersUsed > 0) {
-        score *= Math.pow(0.3, knownLettersUsed);
-      }
-
-      // Additional penalty for using letters in known positions
-      const greenPositions = this.getGreenPositions(possibleWords);
-      for (const [pos, letter] of Object.entries(greenPositions)) {
-        if (word[pos] === letter) {
-          score *= 0.1;
-        }
-      }
+      score += partitionScore * 50;
 
       return { word, score, type: "information" };
     });
 
-    // Filter out words that don't provide enough new information
+    // Filter out words with negative scores and sort by score
     const filteredScores = wordScores
       .filter((score) => score.score > 0)
       .sort((a, b) => b.score - a.score);
